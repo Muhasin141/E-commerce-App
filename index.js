@@ -4,18 +4,18 @@ const cors = require("cors");
 const fs = require("fs");
 const mongoose = require("mongoose"); // Added for convenience in seeding logic
 
-// --- Configuration ---
+
 const PORT = 4000;
-// Fixed ID for the demo user, as we are skipping the login/auth process
+
 const DEMO_USER_ID = "60c72b2f91a4a4001550a256"; 
 
-// --- Imports (Ensure file paths are correct) ---
+
 const { initializeDatabase } = require("./db/db.connect");
 const Product = require("./models/models.products");
 const User = require("./models/models.user");
 const Order = require("./models/models.order"); 
 
-// --- Middleware ---
+
 const corsOptions = {
     origin: "*",
     credentials: true,
@@ -24,20 +24,17 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json()); // Body parser for application/json
 
-// Middleware to attach the DEMO_USER_ID for all routes simulating authentication
+
 const attachUserId = (req, res, next) => {
-    // This middleware attaches the Demo User ID to the request object
+    
     req.userId = DEMO_USER_ID; 
     next();
 };
 
-// --- Database Setup and Initial Seeding Logic (Disabled) ---
+
 initializeDatabase();
 
-/**
- * IMPORTANT: This function is commented out to prevent reseeding on every server start.
- * If you need to re-seed the database, uncomment the seedData() call below and restart the server.
- */
+
 async function seedData() {
     try {
         console.log("--- Starting Data Seeding ---");
@@ -53,7 +50,7 @@ async function seedData() {
         }
         console.log(`Product Data seeded successfully (${productsData.length} items).`);
 
-        // 2. Clear and Seed Demo User
+        
         await User.deleteMany({}); 
         await User.create({
             _id: DEMO_USER_ID,
@@ -82,10 +79,10 @@ async function seedData() {
     }
 }
 
-// seedData(); // 👈 UNCOMMENT THIS LINE ONLY IF YOU NEED TO RESEED THE DB
 
 
-// ## 1. Product Listing, Filters, Sorting, and Search
+
+
 app.get("/api/products", async (req, res) => {
     try {
         const { category, rating, sort, search } = req.query;
@@ -122,7 +119,7 @@ app.get("/api/products", async (req, res) => {
     }
 });
 
-// ## 2. Product Details
+
 app.get("/api/products/:productId", async (req, res) => {
     try {
         const product = await Product.findById(req.params.productId);
@@ -138,13 +135,7 @@ app.get("/api/products/:productId", async (req, res) => {
 });
 
 
-// -----------------------------------------------------------------
-//                          USER-SPECIFIC ROUTES
-// -----------------------------------------------------------------
 
-// ## 3. Cart Management
-
-// GET /api/cart - View Cart
 app.get("/api/cart", attachUserId, async (req, res) => {
     try {
         // Use populate to retrieve full product details inside the cart array
@@ -156,7 +147,7 @@ app.get("/api/cart", attachUserId, async (req, res) => {
     }
 });
 
-// POST /api/cart - Add Item to Cart (or increment quantity)
+
 app.post("/api/cart", attachUserId, async (req, res) => {
     try {
         const { productId } = req.body;
@@ -280,7 +271,7 @@ app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
 });
 
 
-// ## 5. Address Management (CRUD) and Profile Details
+
 
 // GET /api/user/profile - Fetch User Details (including addresses)
 app.get("/api/user/profile", attachUserId, async (req, res) => {
@@ -418,7 +409,7 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
 });
 
 
-// --- Start Server ---
+
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
     console.log(`Backend API running at http://localhost:${PORT}/api`);
