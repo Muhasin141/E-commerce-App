@@ -7,7 +7,7 @@ const mongoose = require("mongoose"); // Added for convenience in seeding logic
 
 const PORT = 4000;
 
-const DEMO_USER_ID = "60c72b2f91a4a4001550a256"; 
+const DEMO_USER_ID = "6903c199a74f687293cca302"; 
 
 
 const { initializeDatabase } = require("./db/db.connect");
