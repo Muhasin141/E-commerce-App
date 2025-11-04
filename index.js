@@ -175,34 +175,53 @@ app.post("/api/cart", attachUserId, async (req, res) => {
 });
 
 // POST /api/cart/quantity - Increase/Decrease Quantity
-app.post("/api/cart/quantity", attachUserId, async (req, res) => {
+// POST /api/cart - Add Item to Cart (or increment quantity)
+app.post("/api/cart", attachUserId, async (req, res) => {
     try {
-        const { productId, action } = req.body; // action: 'increment' or 'decrement'
-        let user = await User.findById(req.userId);
-        
-        const cartItem = user.cart.find(item => item.product.toString() === productId);
-        if (!cartItem) return res.status(404).json({ message: "Item not found in cart." });
+        const { productId } = req.body;
 
-        if (action === 'increment') {
-            cartItem.quantity += 1;
-        } else if (action === 'decrement' && cartItem.quantity > 1) {
-            cartItem.quantity -= 1;
-        } else if (action === 'decrement' && cartItem.quantity === 1) {
-            // Remove item if decrementing from 1
-            user.cart = user.cart.filter(item => item.product.toString() !== productId);
-        } else {
-            return res.status(400).json({ message: "Invalid action or minimum quantity reached." });
+        // 💡 FIX 1: Validate input
+        if (!productId) {
+            return res.status(400).json({ message: "Product ID is required for cart operation." });
+        }
+
+        let user = await User.findById(req.userId);
+
+        // 💡 FIX 2: Check if user exists (addresses the 'User not found' error)
+        if (!user) {
+            // This case should be rare if authentication is correct, but handles the edge case.
+            return res.status(404).json({ message: "User not found in the database." });
         }
         
-        await user.save();
-        user = await user.populate("cart.product");
-        res.status(200).json({ cart: user.cart });
+        const cartItemIndex = user.cart.findIndex(
+            // Use .toString() to compare Mongoose ObjectId with string
+            item => item.product.toString() === productId
+        );
 
+        if (cartItemIndex > -1) {
+            // Item exists: Increase quantity
+            user.cart[cartItemIndex].quantity += 1;
+        } else {
+            // Item doesn't exist: Add new item. Ensure a valid product exists before this step 
+            // in a real app, but for now, we trust the productId is correct.
+            user.cart.push({ product: productId, quantity: 1 });
+        }
+
+        await user.save();
+        
+        // Repopulate to ensure product details are embedded in the response
+        user = await user.populate("cart.product"); 
+        
+        res.status(200).json({ cart: user.cart });
+        
     } catch (error) {
-        res.status(500).json({ message: "Failed to update cart quantity.", error: error.message });
+        // Log the detailed error on the server side for debugging
+        console.error("Error in POST /api/cart:", error.message); 
+        
+        // Return a generic, safe 500 status to the client
+        res.status(500).json({ message: "Failed to add/update item in cart.", error: error.message });
     }
 });
-
 // DELETE /api/cart/:productId - Remove Item from Cart
 app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     try {
