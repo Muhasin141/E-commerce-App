@@ -136,65 +136,38 @@ app.get("/api/products/:productId", async (req, res) => {
 
 
 
+// GET /api/cart - View Cart
 app.get("/api/cart", attachUserId, async (req, res) => {
     try {
         // Use populate to retrieve full product details inside the cart array
         const user = await User.findById(req.userId).populate("cart.product");
+        
+        // IMPORTANT: Ensure user is found before accessing properties
         if (!user) return res.status(404).json({ message: "User not found." });
+        
         res.status(200).json({ cart: user.cart });
     } catch (error) {
+        console.error("Error fetching cart:", error.message);
         res.status(500).json({ message: "Failed to fetch cart.", error: error.message });
     }
 });
 
-
-app.post("/api/cart", attachUserId, async (req, res) => {
-    try {
-        const { productId } = req.body;
-        let user = await User.findById(req.userId);
-        
-        const cartItemIndex = user.cart.findIndex(
-            // Use .toString() to compare Mongoose ObjectId with string
-            item => item.product.toString() === productId
-        );
-
-        if (cartItemIndex > -1) {
-            // Item exists: Increase quantity
-            user.cart[cartItemIndex].quantity += 1;
-        } else {
-            // Item doesn't exist: Add new item
-            user.cart.push({ product: productId, quantity: 1 });
-        }
-
-        await user.save();
-        user = await user.populate("cart.product"); // Repopulate to send fresh data
-        res.status(200).json({ cart: user.cart });
-    } catch (error) {
-        res.status(500).json({ message: "Failed to add/update item in cart.", error: error.message });
-    }
-});
-
-// POST /api/cart/quantity - Increase/Decrease Quantity
 // POST /api/cart - Add Item to Cart (or increment quantity)
 app.post("/api/cart", attachUserId, async (req, res) => {
     try {
         const { productId } = req.body;
 
-        // 💡 FIX 1: Validate input
         if (!productId) {
             return res.status(400).json({ message: "Product ID is required for cart operation." });
         }
 
         let user = await User.findById(req.userId);
 
-        // 💡 FIX 2: Check if user exists (addresses the 'User not found' error)
         if (!user) {
-            // This case should be rare if authentication is correct, but handles the edge case.
             return res.status(404).json({ message: "User not found in the database." });
         }
         
         const cartItemIndex = user.cart.findIndex(
-            // Use .toString() to compare Mongoose ObjectId with string
             item => item.product.toString() === productId
         );
 
@@ -202,8 +175,7 @@ app.post("/api/cart", attachUserId, async (req, res) => {
             // Item exists: Increase quantity
             user.cart[cartItemIndex].quantity += 1;
         } else {
-            // Item doesn't exist: Add new item. Ensure a valid product exists before this step 
-            // in a real app, but for now, we trust the productId is correct.
+            // Item doesn't exist: Add new item.
             user.cart.push({ product: productId, quantity: 1 });
         }
 
@@ -215,18 +187,56 @@ app.post("/api/cart", attachUserId, async (req, res) => {
         res.status(200).json({ cart: user.cart });
         
     } catch (error) {
-        // Log the detailed error on the server side for debugging
         console.error("Error in POST /api/cart:", error.message); 
-        
-        // Return a generic, safe 500 status to the client
         res.status(500).json({ message: "Failed to add/update item in cart.", error: error.message });
     }
 });
+
+// POST /api/cart/quantity - Increase/Decrease Quantity
+app.post("/api/cart/quantity", attachUserId, async (req, res) => {
+    try {
+        // Your frontend sends actions as 'increment' or 'decrement' (lowercase) after .toLowerCase()
+        const { productId, action } = req.body; 
+        let user = await User.findById(req.userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
+
+        const cartItem = user.cart.find(item => item.product.toString() === productId);
+        if (!cartItem) return res.status(404).json({ message: "Item not found in cart." });
+
+        if (action === 'increment') {
+            cartItem.quantity += 1;
+        } else if (action === 'decrement') {
+            if (cartItem.quantity > 1) {
+                cartItem.quantity -= 1;
+            } else {
+                // If quantity is 1, remove the item entirely
+                user.cart = user.cart.filter(item => item.product.toString() !== productId);
+            }
+        } else {
+            return res.status(400).json({ message: "Invalid action provided." });
+        }
+        
+        await user.save();
+        
+        // If the item was removed, populate will work fine on the remaining items
+        user = await user.populate("cart.product"); 
+        res.status(200).json({ cart: user.cart });
+
+    } catch (error) {
+        console.error("Error in POST /api/cart/quantity:", error.message);
+        res.status(500).json({ message: "Failed to update cart quantity.", error: error.message });
+    }
+});
+
+
 // DELETE /api/cart/:productId - Remove Item from Cart
 app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     try {
         const { productId } = req.params;
         const user = await User.findById(req.userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
         
         user.cart = user.cart.filter(item => item.product.toString() !== productId);
         await user.save();
@@ -235,10 +245,10 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
         res.status(200).json({ cart: updatedUser.cart });
 
     } catch (error) {
+        console.error("Error in DELETE /api/cart/:productId:", error.message);
         res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
     }
 });
-
 
 // ## 4. Wishlist Management
 
