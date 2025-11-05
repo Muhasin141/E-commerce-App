@@ -255,9 +255,14 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
 // GET /api/wishlist - View Wishlist
 app.get("/api/wishlist", attachUserId, async (req, res) => {
     try {
+        // Correct population: Populates the array of Product IDs with full Product documents.
         const user = await User.findById(req.userId).populate("wishlist");
+        
+        // Ensure the frontend receives the populated array (array of Product documents)
         res.status(200).json({ wishlist: user.wishlist });
     } catch (error) {
+        // Added console logging for server-side debugging
+        console.error("Error fetching wishlist:", error);
         res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
     }
 });
@@ -266,17 +271,28 @@ app.get("/api/wishlist", attachUserId, async (req, res) => {
 app.post("/api/wishlist", attachUserId, async (req, res) => {
     try {
         const { productId } = req.body;
+        // NOTE: It is best practice to validate productId here before querying
+        
         let user = await User.findById(req.userId);
         
+        // Ensure user exists before proceeding (addresses "User not found")
+        if (!user) {
+             return res.status(404).json({ message: "User not found." });
+        }
+        
+        // Mongoose automatically handles comparison between ObjectId and String
         if (!user.wishlist.includes(productId)) {
             user.wishlist.push(productId);
             await user.save();
         }
         
+        // IMPORTANT: Re-fetch or populate the user *after* saving to get the latest data
+        // Populate the wishlist before sending the response
         user = await user.populate("wishlist");
         res.status(200).json({ wishlist: user.wishlist });
 
     } catch (error) {
+        console.error("Error adding to wishlist:", error);
         res.status(500).json({ message: "Failed to add to wishlist.", error: error.message });
     }
 });
@@ -287,18 +303,23 @@ app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
         const { productId } = req.params;
         const user = await User.findById(req.userId);
         
+        if (!user) {
+             return res.status(404).json({ message: "User not found." });
+        }
+        
         // Mongoose pull operator removes all instances of productId from the array
         user.wishlist.pull(productId); 
         await user.save();
         
+        // Populate the user before sending the response
         const updatedUser = await user.populate("wishlist");
         res.status(200).json({ wishlist: updatedUser.wishlist });
 
     } catch (error) {
+        console.error("Error removing from wishlist:", error);
         res.status(500).json({ message: "Failed to remove item from wishlist.", error: error.message });
     }
 });
-
 
 
 
