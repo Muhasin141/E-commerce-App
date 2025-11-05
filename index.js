@@ -85,7 +85,7 @@ async function seedData() {
 
 app.get("/api/products", async (req, res) => {
     try {
-        const { category, rating, sort, search } = req.query;
+        const { category, rating, sort, q } = req.query;
         let query = {};
         let sortOptions = {};
 
@@ -100,8 +100,8 @@ app.get("/api/products", async (req, res) => {
         }
         
         // Search Filter (by product name, case-insensitive)
-        if (search) {
-            query.name = { $regex: new RegExp(search, 'i') };
+        if (q) {
+            query.name = { $regex: new RegExp(q, 'i') };
         }
 
         // Sorting by Price
