@@ -32,8 +32,12 @@ const attachUserId = (req, res, next) => {
 };
 
 
-initializeDatabase();
-
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(✅ Server started on port ${PORT});
+        console.log(Backend API running at http://localhost:${PORT});
+    });
+});
 
 async function seedData() {
     try {
@@ -460,7 +464,4 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
 
 
 
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
-    console.log(`Backend API running at http://localhost:${PORT}/api`);
-});
+
