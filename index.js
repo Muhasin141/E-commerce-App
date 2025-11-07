@@ -34,8 +34,8 @@ const attachUserId = (req, res, next) => {
 
 initializeDatabase().then(() => {
     app.listen(PORT, () => {
-        console.log(✅ Server started on port ${PORT});
-        console.log(Backend API running at http://localhost:${PORT});
+        console.log(` Server started on port ${PORT}`);
+        console.log(`Backend API running at http://localhost:${PORT}`);
     });
 });
 
