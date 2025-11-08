@@ -43,8 +43,18 @@ async function seedData() {
     try {
         console.log("--- Starting Data Seeding ---");
         
-        
-        
+        // 1. Clear and Seed Products
+        await Product.deleteMany({}); 
+        const jsonData = fs.readFileSync("products.json", "utf-8");
+        const productsData = JSON.parse(jsonData);
+        for (const productData of productsData) {
+            // Ensure data types match the model (especially Price and Rating numbers)
+            const newProduct = new Product(productData);
+            await newProduct.save(); 
+        }
+        console.log(`Product Data seeded successfully (${productsData.length} items).`);
+
+        // 2. Clear and Seed Demo User
         await User.deleteMany({}); 
         await User.create({
             _id: DEMO_USER_ID,
@@ -466,3 +476,9 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
     }
 });
 
+
+// --- Start Server ---
+app.listen(PORT, () => {
+    console.log(`Server started on port ${PORT}`);
+    console.log(`Backend API running at http://localhost:${PORT}/api`);
+});
