@@ -4,18 +4,18 @@ const cors = require("cors");
 const fs = require("fs");
 const mongoose = require("mongoose"); // Added for convenience in seeding logic
 
-// --- Configuration ---
-const PORT = 4000;
-// Fixed ID for the demo user, as we are skipping the login/auth process
-const DEMO_USER_ID = "60c72b2f91a4a4001550a256"; 
 
-// --- Imports (Ensure file paths are correct) ---
+const PORT = 4000;
+
+const DEMO_USER_ID = "6903c199a74f687293cca302"; 
+
+
 const { initializeDatabase } = require("./db/db.connect");
 const Product = require("./models/models.products");
 const User = require("./models/models.user");
 const Order = require("./models/models.order"); 
 
-// --- Middleware ---
+
 const corsOptions = {
     origin: "*",
     credentials: true,
@@ -24,36 +24,27 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json()); // Body parser for application/json
 
-// Middleware to attach the DEMO_USER_ID for all routes simulating authentication
+
 const attachUserId = (req, res, next) => {
-    // This middleware attaches the Demo User ID to the request object
+    
     req.userId = DEMO_USER_ID; 
     next();
 };
 
-// --- Database Setup and Initial Seeding Logic (Disabled) ---
-initializeDatabase();
 
-/**
- * IMPORTANT: This function is commented out to prevent reseeding on every server start.
- * If you need to re-seed the database, uncomment the seedData() call below and restart the server.
- */
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(` Server started on port ${PORT}`);
+        console.log(`Backend API running at http://localhost:${PORT}`);
+    });
+});
+
 async function seedData() {
     try {
         console.log("--- Starting Data Seeding ---");
         
-        // 1. Clear and Seed Products
-        await Product.deleteMany({}); 
-        const jsonData = fs.readFileSync("products.json", "utf-8");
-        const productsData = JSON.parse(jsonData);
-        for (const productData of productsData) {
-            // Ensure data types match the model (especially Price and Rating numbers)
-            const newProduct = new Product(productData);
-            await newProduct.save(); 
-        }
-        console.log(`Product Data seeded successfully (${productsData.length} items).`);
-
-        // 2. Clear and Seed Demo User
+        
+        
         await User.deleteMany({}); 
         await User.create({
             _id: DEMO_USER_ID,
@@ -71,7 +62,8 @@ async function seedData() {
                 phone: "5551234567"
             }],
             cart: [], 
-            wishlist: []
+            wishlist: [],
+            orderHistory:[]
         });
         console.log("Demo User created successfully.");
 
@@ -82,13 +74,13 @@ async function seedData() {
     }
 }
 
-// seedData(); // 👈 UNCOMMENT THIS LINE ONLY IF YOU NEED TO RESEED THE DB
 
 
-// ## 1. Product Listing, Filters, Sorting, and Search
+
+
 app.get("/api/products", async (req, res) => {
     try {
-        const { category, rating, sort, search } = req.query;
+        const { category, rating, sort, q } = req.query;
         let query = {};
         let sortOptions = {};
 
@@ -103,8 +95,8 @@ app.get("/api/products", async (req, res) => {
         }
         
         // Search Filter (by product name, case-insensitive)
-        if (search) {
-            query.name = { $regex: new RegExp(search, 'i') };
+        if (q) {
+            query.name = { $regex: new RegExp(q, 'i') };
         }
 
         // Sorting by Price
@@ -122,7 +114,7 @@ app.get("/api/products", async (req, res) => {
     }
 });
 
-// ## 2. Product Details
+
 app.get("/api/products/:productId", async (req, res) => {
     try {
         const product = await Product.findById(req.params.productId);
@@ -138,20 +130,19 @@ app.get("/api/products/:productId", async (req, res) => {
 });
 
 
-// -----------------------------------------------------------------
-//                          USER-SPECIFIC ROUTES
-// -----------------------------------------------------------------
-
-// ## 3. Cart Management
 
 // GET /api/cart - View Cart
 app.get("/api/cart", attachUserId, async (req, res) => {
     try {
         // Use populate to retrieve full product details inside the cart array
         const user = await User.findById(req.userId).populate("cart.product");
+        
+        // IMPORTANT: Ensure user is found before accessing properties
         if (!user) return res.status(404).json({ message: "User not found." });
+        
         res.status(200).json({ cart: user.cart });
     } catch (error) {
+        console.error("Error fetching cart:", error.message);
         res.status(500).json({ message: "Failed to fetch cart.", error: error.message });
     }
 });
@@ -160,10 +151,18 @@ app.get("/api/cart", attachUserId, async (req, res) => {
 app.post("/api/cart", attachUserId, async (req, res) => {
     try {
         const { productId } = req.body;
+
+        if (!productId) {
+            return res.status(400).json({ message: "Product ID is required for cart operation." });
+        }
+
         let user = await User.findById(req.userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found in the database." });
+        }
         
         const cartItemIndex = user.cart.findIndex(
-            // Use .toString() to compare Mongoose ObjectId with string
             item => item.product.toString() === productId
         );
 
@@ -171,14 +170,19 @@ app.post("/api/cart", attachUserId, async (req, res) => {
             // Item exists: Increase quantity
             user.cart[cartItemIndex].quantity += 1;
         } else {
-            // Item doesn't exist: Add new item
+            // Item doesn't exist: Add new item.
             user.cart.push({ product: productId, quantity: 1 });
         }
 
         await user.save();
-        user = await user.populate("cart.product"); // Repopulate to send fresh data
+        
+        // Repopulate to ensure product details are embedded in the response
+        user = await user.populate("cart.product"); 
+        
         res.status(200).json({ cart: user.cart });
+        
     } catch (error) {
+        console.error("Error in POST /api/cart:", error.message); 
         res.status(500).json({ message: "Failed to add/update item in cart.", error: error.message });
     }
 });
@@ -186,37 +190,48 @@ app.post("/api/cart", attachUserId, async (req, res) => {
 // POST /api/cart/quantity - Increase/Decrease Quantity
 app.post("/api/cart/quantity", attachUserId, async (req, res) => {
     try {
-        const { productId, action } = req.body; // action: 'increment' or 'decrement'
+        // Your frontend sends actions as 'increment' or 'decrement' (lowercase) after .toLowerCase()
+        const { productId, action } = req.body; 
         let user = await User.findById(req.userId);
         
+        if (!user) return res.status(404).json({ message: "User not found." });
+
         const cartItem = user.cart.find(item => item.product.toString() === productId);
         if (!cartItem) return res.status(404).json({ message: "Item not found in cart." });
 
         if (action === 'increment') {
             cartItem.quantity += 1;
-        } else if (action === 'decrement' && cartItem.quantity > 1) {
-            cartItem.quantity -= 1;
-        } else if (action === 'decrement' && cartItem.quantity === 1) {
-            // Remove item if decrementing from 1
-            user.cart = user.cart.filter(item => item.product.toString() !== productId);
+        } else if (action === 'decrement') {
+            if (cartItem.quantity > 1) {
+                cartItem.quantity -= 1;
+            } else {
+                // If quantity is 1, remove the item entirely
+                user.cart = user.cart.filter(item => item.product.toString() !== productId);
+            }
         } else {
-            return res.status(400).json({ message: "Invalid action or minimum quantity reached." });
+            return res.status(400).json({ message: "Invalid action provided." });
         }
         
         await user.save();
-        user = await user.populate("cart.product");
+        
+        // If the item was removed, populate will work fine on the remaining items
+        user = await user.populate("cart.product"); 
         res.status(200).json({ cart: user.cart });
 
     } catch (error) {
+        console.error("Error in POST /api/cart/quantity:", error.message);
         res.status(500).json({ message: "Failed to update cart quantity.", error: error.message });
     }
 });
+
 
 // DELETE /api/cart/:productId - Remove Item from Cart
 app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     try {
         const { productId } = req.params;
         const user = await User.findById(req.userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
         
         user.cart = user.cart.filter(item => item.product.toString() !== productId);
         await user.save();
@@ -225,19 +240,24 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
         res.status(200).json({ cart: updatedUser.cart });
 
     } catch (error) {
+        console.error("Error in DELETE /api/cart/:productId:", error.message);
         res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
     }
 });
-
 
 // ## 4. Wishlist Management
 
 // GET /api/wishlist - View Wishlist
 app.get("/api/wishlist", attachUserId, async (req, res) => {
     try {
+        // Correct population: Populates the array of Product IDs with full Product documents.
         const user = await User.findById(req.userId).populate("wishlist");
+        
+        // Ensure the frontend receives the populated array (array of Product documents)
         res.status(200).json({ wishlist: user.wishlist });
     } catch (error) {
+        // Added console logging for server-side debugging
+        console.error("Error fetching wishlist:", error);
         res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
     }
 });
@@ -246,17 +266,28 @@ app.get("/api/wishlist", attachUserId, async (req, res) => {
 app.post("/api/wishlist", attachUserId, async (req, res) => {
     try {
         const { productId } = req.body;
+        // NOTE: It is best practice to validate productId here before querying
+        
         let user = await User.findById(req.userId);
         
+        // Ensure user exists before proceeding (addresses "User not found")
+        if (!user) {
+             return res.status(404).json({ message: "User not found." });
+        }
+        
+        // Mongoose automatically handles comparison between ObjectId and String
         if (!user.wishlist.includes(productId)) {
             user.wishlist.push(productId);
             await user.save();
         }
         
+        // IMPORTANT: Re-fetch or populate the user *after* saving to get the latest data
+        // Populate the wishlist before sending the response
         user = await user.populate("wishlist");
         res.status(200).json({ wishlist: user.wishlist });
 
     } catch (error) {
+        console.error("Error adding to wishlist:", error);
         res.status(500).json({ message: "Failed to add to wishlist.", error: error.message });
     }
 });
@@ -267,20 +298,25 @@ app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
         const { productId } = req.params;
         const user = await User.findById(req.userId);
         
+        if (!user) {
+             return res.status(404).json({ message: "User not found." });
+        }
+        
         // Mongoose pull operator removes all instances of productId from the array
         user.wishlist.pull(productId); 
         await user.save();
         
+        // Populate the user before sending the response
         const updatedUser = await user.populate("wishlist");
         res.status(200).json({ wishlist: updatedUser.wishlist });
 
     } catch (error) {
+        console.error("Error removing from wishlist:", error);
         res.status(500).json({ message: "Failed to remove item from wishlist.", error: error.message });
     }
 });
 
 
-// ## 5. Address Management (CRUD) and Profile Details
 
 // GET /api/user/profile - Fetch User Details (including addresses)
 app.get("/api/user/profile", attachUserId, async (req, res) => {
@@ -379,47 +415,54 @@ app.get("/api/user/orders", attachUserId, async (req, res) => {
 app.post("/api/checkout", attachUserId, async (req, res) => {
     try {
         const { selectedAddressId, totalAmount } = req.body;
+        
+        // 1. Fetch User and Populate Cart (to get product details for the order snapshot)
         const user = await User.findById(req.userId).populate("cart.product");
 
-        if (user.cart.length === 0) {
+        if (!user || user.cart.length === 0) {
             return res.status(400).json({ message: "Cart is empty. Cannot place order." });
         }
 
+        // 2. Validate and retrieve the shipping address
         const deliveryAddress = user.addresses.id(selectedAddressId);
         if (!deliveryAddress) {
+            // Sends the specific error message back to the frontend
             return res.status(400).json({ message: "Invalid delivery address selected." });
         }
         
-        // Create Order Document (Snapshot of current cart and address)
+        // 3. Prepare the items for the Order snapshot
+        const orderItems = user.cart.map(item => ({
+            product: item.product._id,
+            name: item.product.name,
+            quantity: item.quantity,
+            price: item.product.price, // Captures price at time of purchase
+        }));
+
+        // 4. Create the New Order Document
         const newOrder = new Order({
             user: req.userId,
-            // Map cart items to plain objects for the order snapshot
-            products: user.cart.map(item => item.toObject()), 
-            deliveryAddress: deliveryAddress.toObject(),
+            items: orderItems, // Correctly uses 'items' field from OrderSchema
+            shippingAddress: deliveryAddress.toObject(), // Correctly uses 'shippingAddress'
             totalAmount: totalAmount,
-            status: 'Placed'
+            orderStatus: 'Processing' // Uses default enum value
         });
 
-        await newOrder.save();
+        const savedOrder = await newOrder.save();
         
-        // Clear the Cart after successful order
+        // 5. Update User: Clear Cart AND Add Order ID to History
         user.cart = [];
+        user.orderHistory.push(savedOrder._id); // Add order to history
         await user.save();
 
+        // 6. Send Success Response
         res.status(201).json({ 
-            message: "Order Placed Successfully.",
-            orderId: newOrder._id
+            message: "Order Placed Successfully. Your cart has been cleared.",
+            orderId: savedOrder._id
         });
 
     } catch (error) {
         console.error("Checkout error:", error);
-        res.status(500).json({ message: "Failed to place order.", error: error.message });
+        res.status(500).json({ message: "Failed to place order. Please check server logs.", error: error.message });
     }
 });
 
-
-// --- Start Server ---
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
-    console.log(`Backend API running at http://localhost:${PORT}/api`);
-});
