@@ -9,7 +9,13 @@ const OrderItemSchema = new mongoose.Schema({
     },
     name: { type: String, required: true },
     quantity: { type: Number, required: true },
-    price: { type: Number, required: true }, 
+    price: { type: Number, required: true },
+    // ⭐ NEW: Field to store the selected size string
+    size: {
+        type: String,
+        trim: true,
+        // This is optional since not all products have sizes
+    } 
 });
 
 const OrderSchema = new mongoose.Schema({
