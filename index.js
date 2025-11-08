@@ -80,14 +80,12 @@ async function seedData() {
     } catch (error) {
         console.error("Error seeding the data:", error);
     } finally {
-         console.log("--- Data Seeding Complete ---");
+           console.log("--- Data Seeding Complete ---");
     }
 }
 
 
-
-
-
+// Existing Product Routes...
 app.get("/api/products", async (req, res) => {
     try {
         const { category, rating, sort, q } = req.query;
@@ -140,7 +138,7 @@ app.get("/api/products/:productId", async (req, res) => {
 });
 
 
-
+// Existing Cart Routes...
 // GET /api/cart - View Cart
 app.get("/api/cart", attachUserId, async (req, res) => {
     try {
@@ -327,7 +325,7 @@ app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
 });
 
 
-
+// Existing User Profile Routes...
 // GET /api/user/profile - Fetch User Details (including addresses)
 app.get("/api/user/profile", attachUserId, async (req, res) => {
     try {
@@ -404,19 +402,55 @@ app.delete("/api/address/:addressId", attachUserId, async (req, res) => {
 });
 
 
-// ## 6. Order History
+// ## 6. Order History ----------------------------------------------------
+// -----------------------------------------------------------------------
 
-// GET /api/user/orders - Fetch Order History
+// ⭐ ADDED: GET /api/user/order/:orderId - Fetch a Single Order Detail
+app.get("/api/user/order/:orderId", attachUserId, async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const userId = req.userId; 
+
+        // Find the order by its _id AND ensure the 'user' field matches the authenticated userId.
+        const order = await Order.findOne({ 
+            _id: orderId, 
+            user: userId 
+        })
+        .populate({
+            path: 'items.product', 
+            select: 'name price images' // Populate with necessary product details
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: "Order not found or access denied." });
+        }
+
+        res.status(200).json({ order });
+    } catch (error) {
+        console.error("Error fetching single order:", error);
+        res.status(500).json({ message: "Failed to fetch order details.", error: error.message });
+    }
+});
+
+
+// Existing Route: GET /api/user/orders - Fetch Order History
 app.get("/api/user/orders", attachUserId, async (req, res) => {
     try {
         // Find all orders associated with the user ID, sorted by newest first
-        const orders = await Order.find({ user: req.userId }).sort({ createdAt: -1 });
+        const orders = await Order.find({ user: req.userId })
+            .sort({ createdAt: -1 })
+            .populate({
+                path: 'items.product', 
+                select: 'name' // Populate for brief summary
+            });
         
         res.status(200).json({ orders });
     } catch (error) {
         res.status(500).json({ message: "Failed to fetch order history.", error: error.message });
     }
 });
+
+// -----------------------------------------------------------------------
 
 
 // ## 7. Checkout (Order Placement)
