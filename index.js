@@ -512,7 +512,3 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
 
 
 // --- Start Server ---
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
-    console.log(`Backend API running at http://localhost:${PORT}/api`);
-});
