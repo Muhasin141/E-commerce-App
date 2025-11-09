@@ -268,6 +268,25 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     }
 });
 
+app.delete("/api/cart/clear", attachUserId, async (req, res) => {
+    try {
+        let user = await User.findById(req.userId);
+
+        if (!user) return res.status(404).json({ message: "User not found." });
+
+        // Action: Reset the user's cart array to empty
+        user.cart = [];
+        await user.save();
+
+        res.status(200).json({
+            message: "Cart successfully cleared.",
+            cart: [] // Return the empty cart array
+        });
+    } catch (error) {
+        console.error("Error clearing cart:", error.message);
+        res.status(500).json({ message: "Failed to clear cart.", error: error.message });
+    }
+});
 
 // --- 3. WISHLIST MANAGEMENT ROUTES ---
 
