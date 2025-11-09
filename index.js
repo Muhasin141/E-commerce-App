@@ -241,24 +241,31 @@ app.post("/api/cart/quantity", attachUserId, async (req, res) => {
 
 // DELETE /api/cart/:productId: Remove a product entirely from the cart
 // NOTE: This endpoint assumes removal by product ID, ignoring size for simplicity.
+// DELETE /api/cart/:productId: Remove a specific product variant from the cart
 app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
-  try {
-    const { productId } = req.params; 
-    const user = await User.findById(req.userId);
-    
-    if (!user) return res.status(404).json({ message: "User not found." });
-    
-    // Remove all cart entries matching this product ID (regardless of size)
-    user.cart = user.cart.filter(item => item.product.toString() !== productId);
-    await user.save();
-    
-    const updatedUser = await user.populate("cart.product");
-    res.status(200).json({ cart: updatedUser.cart });
-
-  } catch (error) {
-    console.error("Error in DELETE /api/cart/:productId:", error.message);
-    res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
-  }
+    try {
+        const { productId } = req.params;
+        const { size } = req.query; // <<< Capture size from query parameter
+        const user = await User.findById(req.userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
+        
+        // --- MODIFIED FILTER LOGIC ---
+        // Only remove the cart entry that matches BOTH product ID and size
+        user.cart = user.cart.filter(item => 
+            !(item.product.toString() === productId && (item.size || null) === (size || null)) 
+        );
+        // ------------------------------
+        
+        await user.save();
+        
+        const updatedUser = await user.populate("cart.product");
+        res.status(200).json({ cart: updatedUser.cart, message: "Item removed from cart." }); // Added message for alert
+        
+    } catch (error) {
+        console.error("Error in DELETE /api/cart/:productId:", error.message);
+        res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
+    }
 });
 
 
