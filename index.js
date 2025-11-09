@@ -235,6 +235,31 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
   }
 });
 
+app.delete("/api/cart/all", attachUserId, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    
+    if (!user) return res.status(404).json({ message: "User not found." });
+    
+    // ⭐ ACTION: Set the cart array to an empty array
+    user.cart = [];
+    
+    await user.save();
+    
+    // Populate the cart field (which is now empty) for consistency
+    const updatedUser = await user.populate("cart.product");
+    
+    // Respond with the updated (empty) cart
+    res.status(200).json({ 
+      message: "Cart successfully cleared.",
+      cart: updatedUser.cart 
+    });
+  } catch (error) {
+    console.error("Error in DELETE /api/cart/all:", error.message);
+    res.status(500).json({ message: "Failed to clear the entire cart.", error: error.message });
+  }
+});
+
 
 app.get("/api/wishlist", attachUserId, async (req, res) => {
     try {
