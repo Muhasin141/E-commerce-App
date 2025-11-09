@@ -270,25 +270,27 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
 
 app.delete("/api/cart/clear", attachUserId, async (req, res) => {
     try {
-        let user = await User.findById(req.userId);
+        // Use updateOne to directly update the database, setting 'cart' to an empty array
+        const result = await User.updateOne(
+            { _id: req.userId }, // Find the document by the user ID
+            { $set: { cart: [] } } // Set the cart field to an empty array
+        );
 
-        if (!user) return res.status(404).json({ message: "User not found." });
-
-        // Action: Reset the user's cart array to empty
-        user.cart = [];
-        await user.save();
-
+        // Check if the user was found and updated
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ message: "User not found." });
+        }
+        
+        // Return the empty array, as required by the frontend
         res.status(200).json({
             message: "Cart successfully cleared.",
-            cart: [] // Return the empty cart array
+            cart: [] 
         });
     } catch (error) {
         console.error("Error clearing cart:", error.message);
         res.status(500).json({ message: "Failed to clear cart.", error: error.message });
     }
-});
-
-// --- 3. WISHLIST MANAGEMENT ROUTES ---
+}); 
 
 // GET /api/wishlist: Get user wishlist
 app.get("/api/wishlist", attachUserId, async (req, res) => {
