@@ -7,15 +7,18 @@ const mongoose = require("mongoose"); 
 
 const PORT = 4000;
 
+// IMPORTANT: This ID is used to simulate a logged-in user in a frontend-only context.
 const DEMO_USER_ID = "6903c199a74f687293cca302"; 
 
 
+// Import Mongoose Models and DB Connection
 const { initializeDatabase } = require("./db/db.connect");
 const Product = require("./models/models.products");
 const User = require("./models/models.user");
 const Order = require("./models/models.order"); 
 
 
+// --- MIDDLEWARE SETUP ---
 const corsOptions = {
   origin: "*",
   credentials: true,
@@ -25,20 +28,17 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 
+// Middleware to attach the Demo User ID to every request
 const attachUserId = (req, res, next) => {
+  // In a real app, this would come from a JWT/session
   req.userId = DEMO_USER_ID; 
   next();
 };
 
 
-initializeDatabase().then(() => {
-  app.listen(PORT, () => {
-    console.log(` Server started on port ${PORT}`);
-    console.log(`Backend API running at http://localhost:${PORT}`);
-  });
-});
+// --- INITIALIZATION & DATA SEEDING ---
 
-
+// Function to seed product and user data (uncomment User creation for first run)
 async function seedData() {
   try {
     console.log("--- Starting Data Seeding ---");
@@ -49,7 +49,8 @@ async function seedData() {
     await Product.insertMany(productsData);
     console.log(`Product Data seeded successfully (${productsData.length} items).`);
 
-    /*     
+    // --- Uncomment this block to ensure the Demo User exists ---
+    /* 
         await User.deleteMany({ _id: DEMO_USER_ID }); 
         await User.create({
             _id: DEMO_USER_ID,
@@ -57,6 +58,7 @@ async function seedData() {
             email: "demo@example.com",
             password: "testpassword", 
             addresses: [{
+                // Using Mongoose ObjectId for subdocument _id
                 _id: new mongoose.Types.ObjectId(), 
                 fullName: "Demo Home",
                 street: "123 Main Street",
@@ -74,29 +76,45 @@ async function seedData() {
   } catch (error) {
     console.error("Error seeding the data:", error);
   } finally {
-     console.log("--- Data Seeding Complete ---");
+    console.log("--- Data Seeding Complete ---");
   }
 }
 
 
+initializeDatabase().then(() => {
+  // seedData(); // Call this once to populate your DB when starting the server
+  app.listen(PORT, () => {
+    console.log(` Server started on port ${PORT}`);
+    console.log(`Backend API running at http://localhost:${PORT}`);
+  });
+});
+
+
+// --- 1. PRODUCT ROUTES ---
+
+// GET /api/products: Product Listing with Filters, Sort, and Search
 app.get("/api/products", async (req, res) => {
   try {
     const { category, rating, sort, q } = req.query;
     let query = {};
     let sortOptions = {};
 
+    // Filter by Category (multiple categories separated by comma)
     if (category) {
       query.category = { $in: category.split(',') };
     }
 
+    // Filter by Rating (minimum rating)
     if (rating) {
       query.rating = { $gte: Number(rating) };
     }
     
+    // Search by product name (case-insensitive regex)
     if (q) {
       query.name = { $regex: new RegExp(q, 'i') };
     }
 
+    // Sort by Price
     if (sort === 'priceLowToHigh') {
       sortOptions = { price: 1 };
     } else if (sort === 'priceHighToLow') {
@@ -111,7 +129,7 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-
+// GET /api/products/:productId: Single Product Details
 app.get("/api/products/:productId", async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
@@ -126,8 +144,12 @@ app.get("/api/products/:productId", async (req, res) => {
 });
 
 
+// --- 2. CART MANAGEMENT ROUTES ---
+
+// GET /api/cart: Get user cart
 app.get("/api/cart", attachUserId, async (req, res) => {
   try {
+    // Populate the actual product data inside the cart items
     const user = await User.findById(req.userId).populate("cart.product");
     
     if (!user) return res.status(404).json({ message: "User not found." });
@@ -139,7 +161,7 @@ app.get("/api/cart", attachUserId, async (req, res) => {
   }
 });
 
-
+// POST /api/cart: Add item to cart or increment quantity
 app.post("/api/cart", attachUserId, async (req, res) => {
   try {
     const { productId, size = null } = req.body; 
@@ -154,6 +176,7 @@ app.post("/api/cart", attachUserId, async (req, res) => {
       return res.status(404).json({ message: "User not found in the database." });
     }
     
+    // Find item based on product ID AND size (variant)
     const cartItemIndex = user.cart.findIndex(
       item => item.product.toString() === productId && item.size === size
     );
@@ -176,7 +199,7 @@ app.post("/api/cart", attachUserId, async (req, res) => {
   }
 });
 
-
+// POST /api/cart/quantity: Increment or Decrement quantity
 app.post("/api/cart/quantity", attachUserId, async (req, res) => {
   try {
     const { productId, action, size = null } = req.body; 
@@ -196,6 +219,7 @@ app.post("/api/cart/quantity", attachUserId, async (req, res) => {
       if (cartItem.quantity > 1) {
         cartItem.quantity -= 1;
       } else {
+        // Remove item if quantity drops to zero
         user.cart = user.cart.filter(
           item => !(item.product.toString() === productId && item.size === size)
         );
@@ -215,7 +239,8 @@ app.post("/api/cart/quantity", attachUserId, async (req, res) => {
   }
 });
 
-
+// DELETE /api/cart/:productId: Remove a product entirely from the cart
+// NOTE: This endpoint assumes removal by product ID, ignoring size for simplicity.
 app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
   try {
     const { productId } = req.params; 
@@ -223,6 +248,7 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     
     if (!user) return res.status(404).json({ message: "User not found." });
     
+    // Remove all cart entries matching this product ID (regardless of size)
     user.cart = user.cart.filter(item => item.product.toString() !== productId);
     await user.save();
     
@@ -236,120 +262,96 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
 });
 
 
+// --- 3. WISHLIST MANAGEMENT ROUTES ---
+
+// GET /api/wishlist: Get user wishlist
 app.get("/api/wishlist", attachUserId, async (req, res) => {
-    try {
-        // Must populate the 'product' field within the 'wishlist' array of objects.
-        const user = await User.findById(req.userId).populate("wishlist.product");
-        
-        if (!user) return res.status(404).json({ message: "User not found." });
+    try {
+        const user = await User.findById(req.userId).populate("wishlist.product");
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        res.status(200).json({ wishlist: user.wishlist });
-    } catch (error) {
-        console.error("Error fetching wishlist:", error.message);
-        res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
-    }
+        res.status(200).json({ wishlist: user.wishlist });
+    } catch (error) {
+        console.error("Error fetching wishlist:", error.message);
+        res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
+    }
 });
 
-
+// POST /api/wishlist: Add or Remove item from wishlist
 app.post("/api/wishlist", attachUserId, async (req, res) => {
-    try {
-        // Accepting productId, size, and the action (ADD/REMOVE)
-        const { productId, size = null, action } = req.body; 
+    try {
+        const { productId, size = null, action } = req.body; 
 
-        if (!productId || !action) {
-            return res.status(400).json({ message: "Product ID and action are required." });
-        }
-        
-        let user = await User.findById(req.userId);
-        if (!user) return res.status(404).json({ message: "User not found." });
+        if (!productId || !action) {
+            return res.status(400).json({ message: "Product ID and action are required." });
+        }
+        
+        let user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        // Find item index based on the combination of product ID AND size
-        const wishlistIndex = user.wishlist.findIndex(
-            // We use item.product.toString() because it's stored as an ObjectId
-            item => item.product.toString() === productId && item.size === size
-        );
+        const wishlistIndex = user.wishlist.findIndex(
+            item => item.product.toString() === productId && item.size === size
+        );
 
-        if (action === 'ADD') {
-            if (wishlistIndex === -1) {
-                // Item does not exist: Add new item object including size.
-                user.wishlist.push({ product: productId, size: size });
-            }
-        } else if (action === 'REMOVE') {
-            if (wishlistIndex > -1) {
-                // Item found: Remove it from the array.
-                user.wishlist.splice(wishlistIndex, 1);
-            }
-        } else {
-            return res.status(400).json({ message: "Invalid wishlist action provided." });
-        }
+        if (action === 'ADD') {
+            if (wishlistIndex === -1) {
+                user.wishlist.push({ product: productId, size: size });
+            }
+        } else if (action === 'REMOVE') {
+            if (wishlistIndex > -1) {
+                user.wishlist.splice(wishlistIndex, 1);
+            }
+        } else {
+            return res.status(400).json({ message: "Invalid wishlist action provided." });
+        }
 
-        await user.save();
-        
-        // Repopulate and send back the updated wishlist
-        const updatedUser = await user.populate("wishlist.product");
-        res.status(200).json({ wishlist: updatedUser.wishlist });
-    } catch (error) {
-        console.error("Error in POST /api/wishlist:", error.message);
-        res.status(500).json({ message: "Failed to update wishlist.", error: error.message });
-    }
+        await user.save();
+        
+        const updatedUser = await user.populate("wishlist.product");
+        res.status(200).json({ wishlist: updatedUser.wishlist });
+    } catch (error) {
+        console.error("Error in POST /api/wishlist:", error.message);
+        res.status(500).json({ message: "Failed to update wishlist.", error: error.message });
+    }
 });
 
+// DELETE /api/wishlist/clear: Clear entire wishlist
 app.delete("/api/wishlist/clear", attachUserId, async (req, res) => {
-    try {
-        let user = await User.findById(req.userId);
+    try {
+        let user = await User.findById(req.userId);
 
-        if (!user) return res.status(404).json({ message: "User not found." });
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        // Empty the wishlist array
-        user.wishlist = [];
-        await user.save();
+        user.wishlist = [];
+        await user.save();
 
-        res.status(200).json({ 
-            message: "Wishlist successfully cleared.",
-            wishlist: []
-        });
-    } catch (error) {
-        console.error("Error clearing wishlist:", error.message);
-        res.status(500).json({ message: "Failed to clear wishlist.", error: error.message });
-    }
-});
-
-app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
-    try {
-        const { productId } = req.params;
-        // Get size from query params (e.g., /api/wishlist/123?size=M)
-        const { size = null } = req.query; 
-
-        let user = await User.findById(req.userId);
-        if (!user) return res.status(404).json({ message: "User not found." });
-
-        // Filter out the item that matches BOTH product ID AND size
-        user.wishlist = user.wishlist.filter(item => 
-            !(item.product.toString() === productId && item.size === size)
-        );
-
-        await user.save();
-
-        const updatedUser = await user.populate("wishlist.product");
-        res.status(200).json({ wishlist: updatedUser.wishlist });
-    } catch (error) {
-        console.error("Error in DELETE /api/wishlist/:productId:", error.message);
-        res.status(500).json({ message: "Failed to remove item from wishlist.", error: error.message });
-    }
+        res.status(200).json({ 
+            message: "Wishlist successfully cleared.",
+            wishlist: []
+        });
+    } catch (error) {
+        console.error("Error clearing wishlist:", error.message);
+        res.status(500).json({ message: "Failed to clear wishlist.", error: error.message });
+    }
 });
 
 
+// --- 4. USER PROFILE & ORDER HISTORY ROUTES ---
+
+// GET /api/user/profile: Get user profile details
 app.get("/api/user/profile", attachUserId, async (req, res) => {
   try {
     const user = await User.findById(req.userId)
-      .select("-password -__v")
-      .populate("wishlist") 
-      .populate("orderHistory"); 
+      .select("-password -__v") // Exclude password and version key
+      .populate("wishlist") // Populate to get full product data if needed
+      .populate("orderHistory"); // Populate to get full order data if needed
 
     if (!user) {
       return res.status(404).json({ message: "User not found. Check DEMO_USER_ID or seeding." });
     }
     
+    // Returns user object including addresses subdocument
     res.status(200).json(user); 
 
   } catch (error) {
@@ -358,16 +360,42 @@ app.get("/api/user/profile", attachUserId, async (req, res) => {
   }
 });
 
+// PUT /api/user/profile: Update user profile details
+app.put("/api/user/profile", attachUserId, async (req, res) => {
+  try {
+    const { name, email, phone } = req.body;
+    const userId = req.userId;
 
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { name, email, phone },
+      { new: true, runValidators: true } // Return the updated doc & run schema validations
+    ).select("-password -__v");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.status(200).json({ 
+      message: "Profile updated successfully.", 
+      user: user 
+    });
+  } catch (error) {
+    console.error("Error updating profile:", error.message);
+    // Handle validation errors (e.g., duplicate email)
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Email already in use." });
+    }
+    res.status(500).json({ message: "Failed to update user profile.", error: error.message });
+  }
+});
+
+// GET /api/user/orders: Get all user orders (Order History)
 app.get("/api/user/orders", attachUserId, async (req, res) => {
   try {
     const orders = await Order.find({ user: req.userId })
       .sort({ createdAt: -1 })
-      .populate('items.product', 'name price imageUrl');
-
-    if (!orders) {
-      return res.status(200).json({ orders: [] });
-    }
+      .populate('items.product', 'name price imageUrl'); // Populate minimal product details
 
     res.status(200).json({ orders });
   } catch (error) {
@@ -376,33 +404,110 @@ app.get("/api/user/orders", attachUserId, async (req, res) => {
   }
 });
 
+// --- 5. ADDRESS MANAGEMENT ROUTES (CRUD) ---
 
-app.get("/api/user/order/:orderId", attachUserId, async (req, res) => {
+// GET /api/user/addresses: Get all addresses for the user
+app.get("/api/user/addresses", attachUserId, async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const userId = req.userId; 
+    const user = await User.findById(req.userId).select("addresses");
 
-    const order = await Order.findOne({ 
-      _id: orderId, 
-      user: userId 
-    })
-    .populate({
-      path: 'items.product', 
-      select: 'name price imageUrl'
-    });
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found or access denied." });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
     }
 
-    res.status(200).json({ order });
+    res.status(200).json({ addresses: user.addresses });
   } catch (error) {
-    console.error("Error fetching single order:", error);
-    res.status(500).json({ message: "Failed to fetch order details.", error: error.message });
+    console.error("Error fetching addresses:", error.message);
+    res.status(500).json({ message: "Failed to fetch addresses.", error: error.message });
   }
 });
 
+// POST /api/user/addresses: Add a new address
+app.post("/api/user/addresses", attachUserId, async (req, res) => {
+  try {
+    const newAddress = req.body;
+    let user = await User.findById(req.userId);
 
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    user.addresses.push(newAddress);
+    await user.save();
+
+    const addedAddress = user.addresses[user.addresses.length - 1];
+
+    res.status(201).json({ 
+      message: "Address added successfully.",
+      address: addedAddress 
+    });
+  } catch (error) {
+    console.error("Error adding address:", error.message);
+    res.status(500).json({ message: "Failed to add address.", error: error.message });
+  }
+});
+
+// PUT /api/user/addresses/:addressId: Update an existing address
+app.put("/api/user/addresses/:addressId", attachUserId, async (req, res) => {
+  try {
+    const { addressId } = req.params;
+    const updatedAddressData = req.body;
+    let user = await User.findById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const addressToUpdate = user.addresses.id(addressId);
+
+    if (!addressToUpdate) {
+      return res.status(404).json({ message: "Address not found." });
+    }
+
+    Object.assign(addressToUpdate, updatedAddressData);
+    await user.save();
+
+    res.status(200).json({ 
+      message: "Address updated successfully.", 
+      address: addressToUpdate 
+    });
+
+  } catch (error) {
+    console.error("Error updating address:", error.message);
+    res.status(500).json({ message: "Failed to update address.", error: error.message });
+  }
+});
+
+// DELETE /api/user/addresses/:addressId: Remove an address
+app.delete("/api/user/addresses/:addressId", attachUserId, async (req, res) => {
+  try {
+    const { addressId } = req.params;
+    let user = await User.findById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const addressToRemove = user.addresses.id(addressId);
+
+    if (!addressToRemove) {
+      return res.status(404).json({ message: "Address not found." });
+    }
+
+    addressToRemove.deleteOne(); 
+    await user.save();
+
+    res.status(200).json({ message: "Address removed successfully." });
+
+  } catch (error) {
+    console.error("Error deleting address:", error.message);
+    res.status(500).json({ message: "Failed to delete address.", error: error.message });
+  }
+});
+
+// --- 6. CHECKOUT ROUTE ---
+
+// POST /api/checkout: Process the order
 app.post("/api/checkout", attachUserId, async (req, res) => {
   try {
     const { selectedAddressId, totalAmount } = req.body;
@@ -413,30 +518,34 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
       return res.status(400).json({ message: "Cart is empty. Cannot place order." });
     }
 
+    // Find the selected address from the user's addresses subdocument
     const deliveryAddress = user.addresses.id(selectedAddressId);
     if (!deliveryAddress) {
       return res.status(400).json({ message: "Invalid delivery address selected." });
     }
     
+    // Map cart items to order items, ensuring necessary data is captured (price/size)
     const orderItems = user.cart.map(item => ({
       product: item.product._id,
       name: item.product.name,
       quantity: item.quantity,
-      price: item.product.price, 
+      price: item.product.price, // Capture current price at time of order
       size: item.size || null, 
     }));
 
     const newOrder = new Order({
       user: req.userId,
       items: orderItems, 
-      shippingAddress: deliveryAddress.toObject(), 
+      shippingAddress: deliveryAddress.toObject(), // Save a snapshot of the address
       totalAmount: totalAmount,
       orderStatus: 'Processing' 
     });
 
     const savedOrder = await newOrder.save();
     
+    // 1. Clear the user's cart
     user.cart = [];
+    // 2. Add the new order to the user's order history
     user.orderHistory.push(savedOrder._id); 
     await user.save();
 
