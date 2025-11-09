@@ -268,21 +268,21 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
     }
 });
 
+// DELETE /api/cart/clear: Clear entire cart using updateOne
 app.delete("/api/cart/clear", attachUserId, async (req, res) => {
     try {
-        let user = await User.findById(req.userId);
+        // Use updateOne to find the user by ID and set the cart field to an empty array
+        const result = await User.updateOne(
+            { _id: req.userId },       // 1. Filter: Find the user document using the request ID
+            { $set: { cart: [] } }     // 2. Update: Set the 'cart' field to an empty array
+        );
 
-        if (!user) {
+        // Check if the user was found and updated (matchedCount > 0)
+        if (result.matchedCount === 0) {
             return res.status(404).json({ message: "User not found." });
         }
-
-        // 1. Clear the cart array in the Mongoose document
-        user.cart = [];
         
-        // 2. Save the change to the database
-        await user.save(); 
-
-        // 3. Return the empty array for the frontend state update (Crucial!)
+        // Return the empty array, which is crucial for the frontend state update
         res.status(200).json({
             message: "Cart successfully cleared.",
             cart: [] 
