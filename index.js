@@ -215,26 +215,6 @@ app.post("/api/cart/quantity", attachUserId, async (req, res) => {
   }
 });
 
-
-app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
-  try {
-    const { productId } = req.params; 
-    const user = await User.findById(req.userId);
-    
-    if (!user) return res.status(404).json({ message: "User not found." });
-    
-    user.cart = user.cart.filter(item => item.product.toString() !== productId);
-    await user.save();
-    
-    const updatedUser = await user.populate("cart.product");
-    res.status(200).json({ cart: updatedUser.cart });
-
-  } catch (error) {
-    console.error("Error in DELETE /api/cart/:productId:", error.message);
-    res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
-  }
-});
-
 app.delete("/api/cart/all", attachUserId, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
@@ -259,6 +239,28 @@ app.delete("/api/cart/all", attachUserId, async (req, res) => {
     res.status(500).json({ message: "Failed to clear the entire cart.", error: error.message });
   }
 });
+
+
+app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
+  try {
+    const { productId } = req.params; 
+    const user = await User.findById(req.userId);
+    
+    if (!user) return res.status(404).json({ message: "User not found." });
+    
+    user.cart = user.cart.filter(item => item.product.toString() !== productId);
+    await user.save();
+    
+    const updatedUser = await user.populate("cart.product");
+    res.status(200).json({ cart: updatedUser.cart });
+
+  } catch (error) {
+    console.error("Error in DELETE /api/cart/:productId:", error.message);
+    res.status(500).json({ message: "Failed to remove item from cart.", error: error.message });
+  }
+});
+
+
 
 
 app.get("/api/wishlist", attachUserId, async (req, res) => {
