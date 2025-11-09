@@ -237,53 +237,105 @@ app.delete("/api/cart/:productId", attachUserId, async (req, res) => {
 
 
 app.get("/api/wishlist", attachUserId, async (req, res) => {
-    try {
-        const user = await User.findById(req.userId).populate("wishlist");
-        if (!user) return res.status(404).json({ message: "User not found." });
+    try {
+        // Must populate the 'product' field within the 'wishlist' array of objects.
+        const user = await User.findById(req.userId).populate("wishlist.product");
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        res.status(200).json({ wishlist: user.wishlist });
-    } catch (error) {
-        console.error("Error fetching wishlist:", error.message);
-        res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
-    }
+        res.status(200).json({ wishlist: user.wishlist });
+    } catch (error) {
+        console.error("Error fetching wishlist:", error.message);
+        res.status(500).json({ message: "Failed to fetch wishlist.", error: error.message });
+    }
 });
 
 
 app.post("/api/wishlist", attachUserId, async (req, res) => {
-    try {
-        const { productId } = req.body;
-        const user = await User.findById(req.userId);
-        
-        if (!user) return res.status(404).json({ message: "User not found." });
+    try {
+        // Accepting productId, size, and the action (ADD/REMOVE)
+        const { productId, size = null, action } = req.body; 
 
-        if (!user.wishlist.includes(productId)) {
-            user.wishlist.push(productId);
-            await user.save();
-        }
+        if (!productId || !action) {
+            return res.status(400).json({ message: "Product ID and action are required." });
+        }
+        
+        let user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        const updatedUser = await user.populate("wishlist");
-        res.status(200).json({ wishlist: updatedUser.wishlist });
-    } catch (error) {
-        res.status(500).json({ message: "Failed to update wishlist.", error: error.message });
-    }
+        // Find item index based on the combination of product ID AND size
+        const wishlistIndex = user.wishlist.findIndex(
+            // We use item.product.toString() because it's stored as an ObjectId
+            item => item.product.toString() === productId && item.size === size
+        );
+
+        if (action === 'ADD') {
+            if (wishlistIndex === -1) {
+                // Item does not exist: Add new item object including size.
+                user.wishlist.push({ product: productId, size: size });
+            }
+        } else if (action === 'REMOVE') {
+            if (wishlistIndex > -1) {
+                // Item found: Remove it from the array.
+                user.wishlist.splice(wishlistIndex, 1);
+            }
+        } else {
+            return res.status(400).json({ message: "Invalid wishlist action provided." });
+        }
+
+        await user.save();
+        
+        // Repopulate and send back the updated wishlist
+        const updatedUser = await user.populate("wishlist.product");
+        res.status(200).json({ wishlist: updatedUser.wishlist });
+    } catch (error) {
+        console.error("Error in POST /api/wishlist:", error.message);
+        res.status(500).json({ message: "Failed to update wishlist.", error: error.message });
+    }
 });
 
+app.delete("/api/wishlist/clear", attachUserId, async (req, res) => {
+    try {
+        let user = await User.findById(req.userId);
+
+        if (!user) return res.status(404).json({ message: "User not found." });
+
+        // Empty the wishlist array
+        user.wishlist = [];
+        await user.save();
+
+        res.status(200).json({ 
+            message: "Wishlist successfully cleared.",
+            wishlist: []
+        });
+    } catch (error) {
+        console.error("Error clearing wishlist:", error.message);
+        res.status(500).json({ message: "Failed to clear wishlist.", error: error.message });
+    }
+});
 
 app.delete("/api/wishlist/:productId", attachUserId, async (req, res) => {
-    try {
-        const { productId } = req.params;
-        const user = await User.findById(req.userId);
+    try {
+        const { productId } = req.params;
+        // Get size from query params (e.g., /api/wishlist/123?size=M)
+        const { size = null } = req.query; 
 
-        if (!user) return res.status(404).json({ message: "User not found." });
+        let user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: "User not found." });
 
-        user.wishlist = user.wishlist.filter(item => item.toString() !== productId);
-        await user.save();
+        // Filter out the item that matches BOTH product ID AND size
+        user.wishlist = user.wishlist.filter(item => 
+            !(item.product.toString() === productId && item.size === size)
+        );
 
-        const updatedUser = await user.populate("wishlist");
-        res.status(200).json({ wishlist: updatedUser.wishlist });
-    } catch (error) {
-        res.status(500).json({ message: "Failed to update wishlist.", error: error.message });
-    }
+        await user.save();
+
+        const updatedUser = await user.populate("wishlist.product");
+        res.status(200).json({ wishlist: updatedUser.wishlist });
+    } catch (error) {
+        console.error("Error in DELETE /api/wishlist/:productId:", error.message);
+        res.status(500).json({ message: "Failed to remove item from wishlist.", error: error.message });
+    }
 });
 
 
