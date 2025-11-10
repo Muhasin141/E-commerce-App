@@ -488,27 +488,43 @@ app.get("/api/user/addresses", attachUserId, async (req, res) => {
 
 // POST /api/user/addresses: Add a new address
 app.post("/api/user/addresses", attachUserId, async (req, res) => {
-  try {
-    const newAddress = req.body;
-    let user = await User.findById(req.userId);
+  try {
+    const newAddress = req.body;
+    let user = await User.findById(req.userId);
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
 
-    user.addresses.push(newAddress);
-    await user.save();
+    // This pushes the new address data to the array
+    user.addresses.push(newAddress);
+    
+    // Validation runs here, if it fails, it jumps to the catch block
+    await user.save(); 
 
-    const addedAddress = user.addresses[user.addresses.length - 1];
+    const addedAddress = user.addresses[user.addresses.length - 1];
 
-    res.status(201).json({ 
-      message: "Address added successfully.",
-      address: addedAddress 
-    });
-  } catch (error) {
-    console.error("Error adding address:", error.message);
-    res.status(500).json({ message: "Failed to add address.", error: error.message });
-  }
+    res.status(201).json({ 
+      message: "Address added successfully.",
+      address: addedAddress 
+    });
+  } catch (error) {
+    console.error("Error adding address:", error.message);
+
+    // --- CRITICAL IMPROVEMENT FOR DEBUGGING ---
+    // Check for Mongoose Validation Error (Status 400)
+    if (error.name === 'ValidationError') {
+      // Extract validation messages (e.g., "Street is required")
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        message: "Address data validation failed.", 
+        details: errors
+      });
+    }
+
+    // Default to Status 500 for other server errors
+    res.status(500).json({ message: "Failed to add address.", error: error.message });
+  }
 });
 
 // PUT /api/user/addresses/:addressId: Update an existing address
