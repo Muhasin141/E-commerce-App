@@ -487,51 +487,55 @@ app.get("/api/user/addresses", attachUserId, async (req, res) => {
 });
 
 // POST /api/user/addresses: Add a new address
+// POST /api/user/addresses: Add a new address
 app.post("/api/user/addresses", attachUserId, async (req, res) => {
-  try {
-    const newAddress = req.body;
-    let user = await User.findById(req.userId);
+  try {
+    const newAddress = req.body;
+    let user = await User.findById(req.userId);
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // 💡 FIX 1: Enforce single default address logic
+    if (newAddress.isDefault) {
+        user.addresses.forEach(addr => {
+            addr.isDefault = false; // Unset existing defaults
+        });
     }
 
-    // This pushes the new address data to the array
-    user.addresses.push(newAddress);
-    
-    // Validation runs here, if it fails, it jumps to the catch block
-    await user.save(); 
+    // This pushes the new address data to the array
+    user.addresses.push(newAddress);
+    
+    await user.save(); 
 
-    const addedAddress = user.addresses[user.addresses.length - 1];
+    const addedAddress = user.addresses[user.addresses.length - 1];
 
-    res.status(201).json({ 
-      message: "Address added successfully.",
-      address: addedAddress 
-    });
-  } catch (error) {
-    console.error("Error adding address:", error.message);
+    res.status(201).json({ 
+      message: "Address added successfully.",
+      address: addedAddress 
+    });
+  } catch (error) {
+    console.error("Error adding address:", error.message);
 
-    // --- CRITICAL IMPROVEMENT FOR DEBUGGING ---
-    // Check for Mongoose Validation Error (Status 400)
-    if (error.name === 'ValidationError') {
-      // Extract validation messages (e.g., "Street is required")
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({ 
-        message: "Address data validation failed.", 
-        details: errors
-      });
-    }
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        message: "Address data validation failed.", 
+        details: errors
+      });
+    }
 
-    // Default to Status 500 for other server errors
-    res.status(500).json({ message: "Failed to add address.", error: error.message });
-  }
+    res.status(500).json({ message: "Failed to add address.", error: error.message });
+  }
 });
 
+// PUT /api/user/addresses/:addressId: Update an existing address
 // PUT /api/user/addresses/:addressId: Update an existing address
 app.put("/api/user/addresses/:addressId", attachUserId, async (req, res) => {
   try {
     const { addressId } = req.params;
-    const updatedAddressData = req.body;
+    const updatedAddressData = req.body; // Contains the new data, potentially { isDefault: true }
     let user = await User.findById(req.userId);
 
     if (!user) {
@@ -543,38 +547,61 @@ app.put("/api/user/addresses/:addressId", attachUserId, async (req, res) => {
     if (!addressToUpdate) {
       return res.status(404).json({ message: "Address not found." });
     }
+    
+    // 💡 FIX 2: Check for 'isDefault' update and unset others
+    if (updatedAddressData.isDefault === true) {
+        user.addresses.forEach(addr => {
+            // Unset default for all addresses *except* the one we are currently updating
+            if (addr._id.toString() !== addressId) {
+                addr.isDefault = false;
+            }
+        });
+    }
 
     Object.assign(addressToUpdate, updatedAddressData);
-    await user.save();
+    await user.save(); // Validation runs here
 
-    res.status(200).json({ 
-      message: "Address updated successfully.", 
-      address: addressToUpdate 
+    res.status(200).json({ 
+      message: "Address updated successfully.", 
+      address: addressToUpdate 
     });
 
   } catch (error) {
     console.error("Error updating address:", error.message);
+    
+    // 💡 FIX 3: Add Validation Error check for PUT route
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        message: "Address data validation failed during update.", 
+        details: errors
+      });
+    }
+
     res.status(500).json({ message: "Failed to update address.", error: error.message });
   }
 });
-
+// DELETE /api/user/addresses/:addressId: Remove an address
 // DELETE /api/user/addresses/:addressId: Remove an address
 app.delete("/api/user/addresses/:addressId", attachUserId, async (req, res) => {
   try {
     const { addressId } = req.params;
     let user = await User.findById(req.userId);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
+    // ... (User Not Found check)
 
     const addressToRemove = user.addresses.id(addressId);
+    // ... (Address Not Found check)
+    
+    // 💡 OPTIONAL FIX: Handle deletion of the default address
+    const wasDefault = addressToRemove.isDefault;
 
-    if (!addressToRemove) {
-      return res.status(404).json({ message: "Address not found." });
-    }
+    addressToRemove.deleteOne(); 
 
-    addressToRemove.deleteOne(); 
+    if (wasDefault && user.addresses.length > 0) {
+        // Set the first remaining address as the new default
+        user.addresses[0].isDefault = true;
+    }
+
     await user.save();
 
     res.status(200).json({ message: "Address removed successfully." });
