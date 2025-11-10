@@ -433,6 +433,41 @@ app.get("/api/user/orders", attachUserId, async (req, res) => {
   }
 });
 
+app.get("/api/user/order/:orderId", attachUserId, async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const userId = req.userId;
+
+        // 1. Fetch the order, ensuring it belongs to the logged-in user
+        const order = await Order.findOne({ 
+            _id: orderId, 
+            user: userId 
+        })
+        .populate({
+            path: 'items.product', // CRITICAL: Populate product details
+            select: 'name price imageUrl' // Only send necessary fields for the frontend
+        });
+
+        // 2. Handle 404 Not Found
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found or access denied.' });
+        }
+
+        // 3. Success: Send the populated order data
+        res.status(200).json({ 
+            order 
+        });
+
+    } catch (error) {
+        console.error("Error fetching specific order details:", error);
+        if (error.kind === 'ObjectId') {
+            return res.status(404).json({ message: "Invalid order ID format." });
+        }
+        // Ensure server errors also return JSON
+        res.status(500).json({ message: 'Internal Server Error while fetching order details.', error: error.message });
+    }
+});
+
 // --- 5. ADDRESS MANAGEMENT ROUTES (CRUD) ---
 
 // GET /api/user/addresses: Get all addresses for the user
