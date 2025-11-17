@@ -319,9 +319,11 @@ app.post("/api/wishlist", attachUserId, async (req, res) => {
         let user = await User.findById(req.userId);
         if (!user) return res.status(404).json({ message: "User not found." });
 
-        const wishlistIndex = user.wishlist.findIndex(
-            item => item.product.toString() === productId && item.size === size
-        );
+   const normalize = val => val || "";
+
+const wishlistIndex = user.wishlist.findIndex(
+  item => item.product.toString() === productId && normalize(item.size) === normalize(size)
+);
 
         if (action === 'ADD') {
             if (wishlistIndex === -1) {
