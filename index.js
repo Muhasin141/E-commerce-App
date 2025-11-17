@@ -647,7 +647,7 @@ app.post("/api/checkout", attachUserId, async (req, res) => {
       items: orderItems, 
       shippingAddress: deliveryAddress.toObject(), // Save a snapshot of the address
       totalAmount: totalAmount,
-      orderStatus: 'Processing' 
+      orderStatus: 'Shipped' 
     });
 
     const savedOrder = await newOrder.save();
