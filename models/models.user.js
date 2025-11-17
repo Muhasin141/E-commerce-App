@@ -60,10 +60,20 @@ const UserSchema = new mongoose.Schema({
 
  addresses: [AddressSchema], 
  cart: [CartItemSchema],  
- wishlist: [{    
-  type: mongoose.Schema.ObjectId,
-  ref: 'Product'
- }],
+ wishlist: [
+  {
+    product: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'Product',
+      required: true
+    },
+    size: {
+      type: String,
+      trim: true,
+      default: null
+    }
+  }
+],
   
   // --- NEW: Order History Array ---
  orderHistory: [{   
